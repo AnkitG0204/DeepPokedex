@@ -149,53 +149,16 @@ convolve_net.add(Dense(
 ))
 convolve_net.add(Dropout(args.dropout_rate))
 
-# BigDL Parameter Sharing.
-both_feature = TimeDistributed(
-    layer=convolve_net,
-    input_shape=input_shape
-)(both_input)
 
-encode_left = both_feature.index_select(1, 0)
-encode_right = both_feature.index_select(1, 1)
 
-distance = autograd.abs(encode_left - encode_right)
-predict = Dense(
-    output_dim=NUM_CLASS_LABEL,
-    activation="sigmoid",
-    W_regularizer=L2Regularizer(
-        args.penalty_rate
-    )
-)(distance)
+'''
 
-siamese_net = Model(
-    input=both_input, output=predict
-)
+To be implemented in Review - 3.
 
-# Declare the optimizer, train and test the model.
-optimizer = Optimizer(
-    model=siamese_net,
-    training_rdd=train_rdd,
-    optim_method=Adam(args.learning_rate),
-    criterion=CrossEntropyCriterion(),
-    end_trigger=MaxEpoch(args.num_epoch),
-    batch_size=args.batch_size
-)
-optimizer.set_validation(
-    batch_size=args.batch_size,
-    val_rdd=test_rdd,
-    trigger=EveryEpoch(),
-    val_method=[
-        Top1Accuracy()
-    ]
-)
+- Parameter sharing by Intel BigDL to further increase the efficiency of Distributed Processing.
+- To implement the ‘Difference’ function of Siamese networks.
+- Optimisation of the Distributed CNN model.
+- Minor Bug Fixes
+- Logging(Optional)
 
-# Create logs. (Optional -> Doesn't affect the functionality of the code.)
-app_name = "logs"
-optimizer.set_train_summary(TrainSummary(
-    log_dir=".", app_name=app_name
-))
-optimizer.set_val_summary(ValidationSummary(
-    log_dir=".", app_name=app_name
-))
-
-optimizer.optimize()
+'''
