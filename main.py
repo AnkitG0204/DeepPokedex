@@ -6,6 +6,7 @@ import pickle
 from pyspark import SparkContext
 from zoo import create_spark_conf
 from zoo import init_engine
+from pathlib import Path
 
 from zoo.common.utils import Sample
 from zoo.pipeline.api import autograd
@@ -20,6 +21,7 @@ from zoo.pipeline.api.keras.layers import Convolution2D
 from zoo.pipeline.api.keras.layers import AveragePooling2D
 from zoo.pipeline.api.keras.layers import L2Regularizer
 from zoo.pipeline.api.keras.layers import BatchNormalization
+from zoo.pipeline.nnframes import *
 
 from bigdl.nn.criterion import CrossEntropyCriterion
 from bigdl.optim.optimizer import Optimizer
@@ -63,18 +65,10 @@ sc = SparkContext.getOrCreate(
 init_engine()
 
 # Use the pickle file as input features and labels.
-train_img = pickle.load(
-    open(os.path.join(args.data_dir.encode('utf-8').strip(), "train_image.pkl"), "r")
-)
-train_lbl = pickle.load(
-    open(os.path.join(args.data_dir.encode('utf-8').strip(), "train_label.pkl"), "r")
-)
-test_img = pickle.load(
-    open(os.path.join(args.data_dir.encode('utf-8').strip(), "test_image.pkl"), "r")
-)
-test_lbl = pickle.load(
-    open(os.path.join(args.data_dir.encode('utf-8').strip(), "test_label.pkl"), "r")
-)
+train_img = pickle.load(open(os.path.join(args.data_dir, "train_image.pkl"), "rb"), fix_imports=True)
+train_lbl = pickle.load(open(os.path.join(args.data_dir, "train_label.pkl"), "rb"), fix_imports=True)
+test_img = pickle.load(open(os.path.join(args.data_dir, "test_image.pkl"), "rb"), fix_imports=True)
+test_lbl = pickle.load(open(os.path.join(args.data_dir, "test_label.pkl"), "rb"), fix_imports=True)
 
 # Modelling Starts. Defining required variables.
 t_train_img = train_img.transpose((0, 1, 4, 2, 3)) / 225.0
@@ -149,16 +143,63 @@ convolve_net.add(Dense(
 ))
 convolve_net.add(Dropout(args.dropout_rate))
 
+# BigDL Parameter Sharing.
+both_feature = TimeDistributed(
+    layer=convolve_net,
+    input_shape=input_shape
+)(both_input)
 
+encode_left = both_feature.index_select(1, 0)
+encode_right = both_feature.index_select(1, 1)
 
-'''
+distance = autograd.abs(encode_left - encode_right)
+predict = Dense(
+    output_dim=NUM_CLASS_LABEL,
+    activation="sigmoid",
+    W_regularizer=L2Regularizer(
+        args.penalty_rate
+    )
+)(distance)
 
-To be implemented in Review - 3.
+siamese_net = Model(
+    input=both_input, output=predict
+)
 
-- Parameter sharing by Intel BigDL to further increase the efficiency of Distributed Processing.
-- To implement the ‘Difference’ function of Siamese networks.
-- Optimisation of the Distributed CNN model.
-- Minor Bug Fixes
-- Logging(Optional)
+print(predict)
 
-'''
+# Declare the optimizer, train and test the model.
+optimizer = Optimizer(
+    model=siamese_net,
+    training_rdd=train_rdd,
+    optim_method=Adam(args.learning_rate),
+    criterion=CrossEntropyCriterion(),
+    end_trigger=MaxEpoch(args.num_epoch),
+    batch_size=args.batch_size
+)
+optimizer.set_validation(
+    batch_size=args.batch_size,
+    val_rdd=test_rdd,
+    trigger=EveryEpoch(),
+    val_method=[
+        Top1Accuracy()
+    ]
+)
+
+# Create logs.
+app_name = "logs"
+optimizer.set_train_summary(TrainSummary(
+    log_dir=".", app_name=app_name
+))
+optimizer.set_val_summary(ValidationSummary(
+    log_dir=".", app_name=app_name
+))
+
+print('Pipeline : Intel Analytics Zoo\n')
+print('Starting to train the model on Intel BigDL')
+print('Paramaters : Shared')
+pokemon_model = optimizer.optimize()
+print('Model training finished!')
+
+predictions = pokemon_model.predict(test_rdd).collect()
+
+print(predictions)
