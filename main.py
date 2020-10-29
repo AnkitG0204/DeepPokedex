@@ -6,7 +6,6 @@ import pickle
 from pyspark import SparkContext
 from zoo import create_spark_conf
 from zoo import init_engine
-from pathlib import Path
 
 from zoo.common.utils import Sample
 from zoo.pipeline.api import autograd
@@ -41,20 +40,21 @@ parser.add_argument("--learning_rate", "-lr", type=float, default=1e-3)
 parser.add_argument("--penalty_rate", "-pr", type=float, default=1e-6)
 parser.add_argument("--dropout_rate", "-dr", type=float, default=0.75)
 
-LAYER_1_NUM_CHANNEL = 8         # Convolutional Channels in 1st Layer.
-CONVOLVE_1_KERNEL_SIZE = 9      # Window size of the first layer of convolution kernel.
-POOLING_1_WINDOW_SIZE = 2       # The window size of the first pooling layer.
-POOLING_1_STRIDE_SIZE = 2       # Sliding step size of the first pooling layer.
-LAYER_2_NUM_CHANNEL = 2         # Convolution channels in 2nd layer.
-CONVOLVE_2_KERNEL_SIZE = 5      # Window size of the second layer of convolution kernel.
-POOLING_2_WINDOW_SIZE = 2       # The window size of the second pooling layer.
-POOLING_2_STRIDE_SIZE = 2       # Sliding step size of the second pooling layer.
-FC_LINEAR_DIMENSION = 64        # Dimension of the fully connected layer.
+# Defining variables for the distributed CNN model.
+LAYER_1_NUM_CHANNEL = 8         			# Convolutional Channels in 1st Layer.
+CONVOLVE_1_KERNEL_SIZE = 9      			# Window size of the first layer of convolution kernel.
+POOLING_1_WINDOW_SIZE = 2       			# The window size of the first pooling layer.
+POOLING_1_STRIDE_SIZE = 2       			# Sliding step size of the first pooling layer.
+LAYER_2_NUM_CHANNEL = 2         			# Convolution channels in 2nd layer.
+CONVOLVE_2_KERNEL_SIZE = 5      			# Window size of the second layer of convolution kernel.
+POOLING_2_WINDOW_SIZE = 2       			# The window size of the second pooling layer.
+POOLING_2_STRIDE_SIZE = 2       			# Sliding step size of the second pooling layer.
+FC_LINEAR_DIMENSION = 64        			# Dimension of the fully connected layer.
 
 args = parser.parse_args()
 print (json.dumps(args.__dict__, indent=True, ensure_ascii=False))
 
-# Pyspark + Analytic-Zoo.
+# Pyspark + Analytic-Zoo initialization.
 sc = SparkContext.getOrCreate(
     conf=create_spark_conf()
     .setMaster("local[16]")
@@ -69,7 +69,7 @@ train_lbl = pickle.load(open(os.path.join(args.data_dir, "train_label.pkl"), "rb
 test_img = pickle.load(open(os.path.join(args.data_dir, "test_image.pkl"), "rb"), fix_imports=True)
 test_lbl = pickle.load(open(os.path.join(args.data_dir, "test_label.pkl"), "rb"), fix_imports=True)
 
-# Modelling Starts. Defining required variables.
+# Modelling structuring starts.
 t_train_img = train_img.transpose((0, 1, 4, 2, 3)) / 225.0
 t_test_img = test_img.transpose((0, 1, 4, 2, 3)) / 225.0
 
@@ -142,7 +142,7 @@ convolve_net.add(Dense(
 ))
 convolve_net.add(Dropout(args.dropout_rate))
 
-# BigDL Parameter Sharing.
+# BigDL Parameter Sharing and laying out the final model.
 both_feature = TimeDistributed(
     layer=convolve_net,
     input_shape=input_shape
@@ -164,7 +164,7 @@ siamese_net = Model(
     input=both_input, output=predict
 )
 
-# Declare the optimizer, train and test the model.
+# Declare the optimizer.
 optimizer = Optimizer(
     model=siamese_net,
     training_rdd=train_rdd,
@@ -191,6 +191,7 @@ optimizer.set_val_summary(ValidationSummary(
     log_dir=".", app_name=app_name
 ))
 
+# Call the optimizer to start training the model.
 print('\n\nModel training started!')
 print('\n\nPipeline: Intel Analytics Zoo')
 print('Starting to train the model on Intel BigDL')
@@ -198,8 +199,8 @@ print('Paramaters: Shared\n\n')
 pokemon_model = optimizer.optimize()
 print('\n\nModel training finished!\n\n')
 
+# Make the predictions.
 predictions = pokemon_model.predict(test_rdd).collect()
-
 print('\n\nThe predictions are\n')
 print('-------------------------------------------------\n')
 print('Encoding - 1\tEncoding - 2\tInference?\n')
