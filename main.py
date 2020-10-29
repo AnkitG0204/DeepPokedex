@@ -21,7 +21,6 @@ from zoo.pipeline.api.keras.layers import Convolution2D
 from zoo.pipeline.api.keras.layers import AveragePooling2D
 from zoo.pipeline.api.keras.layers import L2Regularizer
 from zoo.pipeline.api.keras.layers import BatchNormalization
-from zoo.pipeline.nnframes import *
 
 from bigdl.nn.criterion import CrossEntropyCriterion
 from bigdl.optim.optimizer import Optimizer
@@ -165,8 +164,6 @@ siamese_net = Model(
     input=both_input, output=predict
 )
 
-print(predict)
-
 # Declare the optimizer, train and test the model.
 optimizer = Optimizer(
     model=siamese_net,
@@ -194,12 +191,21 @@ optimizer.set_val_summary(ValidationSummary(
     log_dir=".", app_name=app_name
 ))
 
-print('Pipeline : Intel Analytics Zoo\n')
+print('\n\nModel training started!')
+print('\n\nPipeline: Intel Analytics Zoo')
 print('Starting to train the model on Intel BigDL')
-print('Paramaters : Shared')
+print('Paramaters: Shared\n\n')
 pokemon_model = optimizer.optimize()
-print('Model training finished!')
+print('\n\nModel training finished!\n\n')
 
 predictions = pokemon_model.predict(test_rdd).collect()
 
-print(predictions)
+print('\n\nThe predictions are\n')
+print('-------------------------------------------------\n')
+print('Encoding - 1\tEncoding - 2\tInference?\n')
+print('-------------------------------------------------\n\n')
+for i in predictions:
+    if(abs(i[0]-i[1]) < 0.1):
+        print(i[0], '\t', i[1], '\tSame Pokemon')
+    else:
+        print(i[0], '\t', i[1], '\tDifferent Pokemon')
